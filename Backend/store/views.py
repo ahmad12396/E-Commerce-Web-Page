@@ -1,11 +1,15 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes,parser_classes
 from django.db import transaction
 from rest_framework.response import Response
 from .models import Category, Product, Cart, CartItem, Order, OrderItem
 from .serializers import CategorySerializer, ProductSerializer, CartSerializer
 from rest_framework.permissions import AllowAny, IsAuthenticated
-
+from .models import Product
+from pgvector.django import CosineDistance
+from rest_framework.parsers import MultiPartParser, FormParser
+from sentence_transformers import SentenceTransformer
+from .utils import get_image_vector
 
 # --- PUBLIC VIEWS ---
 
@@ -151,3 +155,39 @@ def create_order(request):
     except Exception as e:
         print(f"ERROR OCCURRED: {str(e)}") 
         return Response({'error': str(e)}, status=500)
+    
+
+
+# store/views.py
+model = SentenceTransformer('clip-ViT-B-32')
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
+def search_by_image(request):
+    image_file = request.FILES.get("search_image")
+    if not image_file:
+        return Response({"error": "No image provided"}, status=400)
+
+    try:
+        # 1. Generate the CLIP vector
+        query_vector = get_image_vector(image_file)
+        
+        # 2. EXACT MATCH FILTERING
+        # 0.20 is very strict. It will block anything that isn't almost identical.
+        results = Product.objects.annotate(
+            distance=CosineDistance("embedding", query_vector)
+        ).filter(distance__lte=0.20).order_by("distance")
+
+        # 3. Return results
+        if not results.exists():
+            # If distance is > 0.20, we return nothing to ensure "Exact Only"
+            return Response([], status=200)
+
+        serializer = ProductSerializer(results, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    except Exception as e:
+        print(f"Internal Search Error: {e}")
+        return Response({"error": "Search failed"}, status=500)

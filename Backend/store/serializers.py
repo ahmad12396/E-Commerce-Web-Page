@@ -10,11 +10,17 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = '__all__'
         
 class ProductSerializer(serializers.ModelSerializer):
-    category_name = serializers.ReadOnlyField(source='category.name') 
+    category_name = serializers.ReadOnlyField(source='category.name')
+    image = serializers.ImageField(read_only=True)
 
     class Meta:
         model = Product
-        fields = ['id', 'name', 'price', 'stock', 'category_name', 'image']
+        # Include 'embedding' if you need it for debugging, 
+        # though usually, the frontend only needs the product details.
+        fields = ['id', 'name', 'price', 'stock', 'category_name', 'image', 'embedding']
+        extra_kwargs = {
+            'embedding': {'write_only': True}  # Hide embedding from standard GET responses if preferred
+        }
     
 class CartItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)

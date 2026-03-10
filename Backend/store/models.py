@@ -3,6 +3,8 @@ from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from login.models import UserProfile
+from pgvector.django import VectorField
+from .utils import get_image_vector 
 
 class Category(models.Model):
     name = models.CharField(max_length=255)
@@ -22,6 +24,7 @@ class Product(models.Model):
     image = models.ImageField(upload_to='products/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    embedding = VectorField(dimensions=512, null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -94,3 +97,19 @@ def create_user_assets(sender, instance, created, **kwargs):
 def save_user_assets(sender, instance, **kwargs):
     if hasattr(instance, 'userprofile'):
         instance.userprofile.save()
+        
+        
+        
+@receiver(post_save, sender=Product)
+def update_product_embedding(sender, instance, created, **kwargs):
+    """
+    Automatically generates a vector embedding when a Product is saved 
+    with an image.
+    """
+    if instance.image and not instance.embedding:
+        try:
+            vector = get_image_vector(instance.image.path)
+            instance.embedding = vector
+            instance.save(update_fields=['embedding'])
+        except Exception as e:
+            print(f"Error generating embedding for {instance.name}: {e}")
